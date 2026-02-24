@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
@@ -12,8 +12,15 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/", { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,10 +29,16 @@ const Login = () => {
     try {
       const { token } = await api.login(email, password);
       login(token);
-      navigate("/");
+      // Navigation will be handled by the useEffect above
     } catch (err: any) {
-      setError(err.message || "Credenciais inválidas");
-    } finally {
+      const message = String(err?.message || "").trim();
+      if (!message) {
+        setError("Credenciais inválidas");
+      } else if (message === "Unauthorized") {
+        setError("Credenciais inválidas");
+      } else {
+        setError(message);
+      }
       setLoading(false);
     }
   };
@@ -37,7 +50,7 @@ const Login = () => {
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 mb-4">
             <Sparkles className="w-7 h-7 text-primary" />
           </div>
-          <h1 className="text-3xl font-display font-bold text-foreground">AliceGlow</h1>
+          <h1 className="text-3xl font-display font-bold text-foreground">AliceGlowStore</h1>
           <p className="text-muted-foreground mt-1 text-sm">Sistema de Gestão</p>
         </div>
 

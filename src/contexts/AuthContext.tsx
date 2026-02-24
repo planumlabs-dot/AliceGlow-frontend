@@ -28,6 +28,27 @@ function parseJwt(token: string): Record<string, any> | null {
   }
 }
 
+function toStringArray(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") return [value];
+  return [];
+}
+
+function isAdminFromPayload(payload: Record<string, any>): boolean {
+  const directRole = String(payload.role || payload.perfil || payload.profile || "");
+  if (directRole === "ADMIN" || directRole === "ROLE_ADMIN") return true;
+
+  const roles = [
+    ...toStringArray(payload.perfils),
+    ...toStringArray(payload.perfis),
+    ...toStringArray(payload.roles),
+    ...toStringArray(payload.authorities),
+  ].map((r) => r.toUpperCase());
+
+  return roles.includes("ADMIN") || roles.includes("ROLE_ADMIN");
+}
+
 const demoUser: AuthUser = {
   role: "ADMIN",
   email: "alice@aliceglow.com",
@@ -39,6 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     DEMO_MODE ? "demo" : localStorage.getItem("aliceglow_token")
   );
   const [user, setUser] = useState<AuthUser | null>(DEMO_MODE ? demoUser : null);
+
+  const logout = () => {
+    localStorage.removeItem("aliceglow_token");
+    setToken(null);
+    setUser(null);
+  };
 
   useEffect(() => {
     if (DEMO_MODE) {
@@ -53,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         setUser({
-          role: payload.perfils?.includes("ADMIN") || payload.role === "ADMIN" ? "ADMIN" : "USER",
+          role: isAdminFromPayload(payload) ? "ADMIN" : "USER",
           email: payload.email || payload.sub || "",
           name: payload.name || "",
         });
@@ -68,12 +95,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = (newToken: string) => {
     localStorage.setItem("aliceglow_token", newToken);
     setToken(newToken);
-  };
-
-  const logout = () => {
-    localStorage.removeItem("aliceglow_token");
-    setToken(null);
-    setUser(null);
   };
 
   return (

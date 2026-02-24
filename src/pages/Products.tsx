@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, Product } from "@/lib/api";
 import { DEMO_MODE, demoProducts } from "@/lib/demo-data";
-import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,86 +10,187 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Plus, Trash2, Pencil } from "lucide-react";
+import { Plus, Pencil, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 
+type ProductFilter = "active" | "inactive" | "all";
+
 const Products = () => {
-  const { isAdmin } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<ProductFilter>("active");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
-  const [form, setForm] = useState({ name: "", costPrice: "", stock: "" });
+  const [form, setForm] = useState({ name: "", costPrice: "", salePrice: "", stock: "" });
 
-  const fetchProducts = async () => {
-    if (DEMO_MODE) { setProducts(demoProducts); setLoading(false); return; }
-    try { setProducts(await api.getProducts()); }
-    catch { toast.error("Erro ao carregar produtos"); }
-    finally { setLoading(false); }
+  useEffect(() => {
+    const run = async () => {
+      setLoading(true);
+      try {
+        const params = nextFilterToApiParams(filter);
+        const result = await api.getProducts(params);
+        setProducts(result);
+      } catch {
+        toast.error("Erro ao carregar produtos");
+      } finally {
+        setLoading(false);
+      }
+    };
+    void run();
+  }, [filter]);
+
+  const nextFilterToApiParams = (f: ProductFilter) => {
+    if (f === "active") return undefined;
+    if (f === "inactive") return { active: false } as const;
+    return { includeInactive: true } as const;
   };
 
-  useEffect(() => { fetchProducts(); }, []);
-
-  const openCreate = () => { setEditing(null); setForm({ name: "", costPrice: "", stock: "" }); setDialogOpen(true); };
-  const openEdit = (p: Product) => { setEditing(p); setForm({ name: p.name, costPrice: String(p.costPrice), stock: String(p.stock) }); setDialogOpen(true); };
+  const openCreate = () => { setEditing(null); setForm({ name: "", costPrice: "", salePrice: "", stock: "" }); setDialogOpen(true); };
+  const openEdit = (p: Product) => { setEditing(p); setForm({ name: p.name, costPrice: String(p.costPrice), salePrice: p.salePrice !== undefined ? String(p.salePrice) : "", stock: String(p.stock) }); setDialogOpen(true); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const data = { name: form.name, costPrice: parseFloat(form.costPrice), stock: parseInt(form.stock) };
+    const costPrice = parseFloat(form.costPrice);
+    const salePrice = parseFloat(form.salePrice);
+    const stock = parseInt(form.stock, 10);
+    if (!form.name || isNaN(costPrice) || isNaN(salePrice) || isNaN(stock) || costPrice < 0.01 || salePrice < 0.01 || stock < 0) {
+      toast.error("Preencha todos os campos corretamente. Preços devem ser no mínimo 0,01 e estoque não pode ser negativo.");
+      return;
+    }
+    const data = { name: form.name, costPrice, salePrice, stock };
     try {
-      if (DEMO_MODE) { toast.success(editing ? "Produto atualizado (demo)" : "Produto criado (demo)"); setDialogOpen(false); return; }
+      if (DEMO_MODE) {
+        if (editing) {
+          const idx = products.findIndex((p) => p.id === editing.id);
+          if (idx >= 0) { const updated = [...products]; updated[idx] = { ...editing, ...data }; setProducts(updated); }
+        } else {
+          setProducts([...products, { id: Math.max(0, ...products.map((p) => p.id)) + 1, ...data }]);
+        }
+        toast.success(editing ? "Produto atualizado" : "Produto criado");
+        setDialogOpen(false);
+        return;
+      }
       if (editing) { await api.updateProduct(editing.id, data); toast.success("Produto atualizado"); }
       else { await api.createProduct(data); toast.success("Produto criado"); }
-      setDialogOpen(false); fetchProducts();
-    } catch { toast.error("Erro ao salvar produto"); }
+      setDialogOpen(false);
+      // refetch mantém filtro atual
+      setFilter((v) => v);
+    } catch (err) {
+      if ((err as any)?.status === 403) {
+        toast.error("Sem permissão para cadastrar/editar produto");
+        return;
+      }
+      toast.error("Erro ao salvar produto");
+    }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Tem certeza que deseja excluir este produto?")) return;
-    if (DEMO_MODE) { toast.success("Produto excluído (demo)"); return; }
-    try { await api.deleteProduct(id); toast.success("Produto excluído"); fetchProducts(); }
-    catch { toast.error("Erro ao excluir produto"); }
+  const handleToggleActive = async (p: Product) => {
+    if (!p?.id) return;
+    if (DEMO_MODE) {
+      setProducts(products.map((x) => (x.id === p.id ? { ...x, active: !(x.active ?? true) } : x)));
+      toast.success((p.active ?? true) ? "Produto desativado" : "Produto ativado");
+      return;
+    }
+    try {
+      if (p.active ?? true) {
+        await api.deactivateProduct(p.id);
+        toast.success("Produto desativado");
+      } else {
+        await api.activateProduct(p.id);
+        toast.success("Produto ativado");
+      }
+      // refetch respeitando filtro (se desativar em 'ativos', pode sumir da lista)
+      setFilter((v) => v);
+    } catch (err: any) {
+      if (err?.status === 403) toast.error("Sem permissão para ativar/desativar produto");
+      else toast.error(err?.message || "Erro ao alterar status do produto");
+    }
   };
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>;
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold text-foreground">Produtos</h1>
           <p className="text-muted-foreground text-sm mt-1">{products.length} produtos cadastrados</p>
         </div>
-        {isAdmin && (
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={openCreate}><Plus className="w-4 h-4 mr-2" />Novo Produto</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>{editing ? "Editar Produto" : "Novo Produto"}</DialogTitle></DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-                <div className="space-y-2"><Label>Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
-                <div className="space-y-2"><Label>Preço de Custo</Label><Input type="number" step="0.01" value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} required /></div>
-                <div className="space-y-2"><Label>Estoque</Label><Input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} required /></div>
-                <Button type="submit" className="w-full">{editing ? "Salvar" : "Criar"}</Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        )}
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={openCreate}>
+              <Plus className="w-4 h-4 mr-2" />Cadastrar Produto
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>{editing ? "Editar Produto" : "Cadastrar Produto"}</DialogTitle></DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+              <div className="space-y-2"><Label>Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+              <div className="space-y-2"><Label>Preço de Custo</Label><Input type="number" step="0.01" min="0.01" value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} required /></div>
+              <div className="space-y-2"><Label>Preço de Venda</Label><Input type="number" step="0.01" min="0.01" value={form.salePrice} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} required /></div>
+              <div className="space-y-2"><Label>Estoque</Label><Input type="number" min={0} value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} required /></div>
+              <Button type="submit" className="w-full">{editing ? "Salvar" : "Cadastrar"}</Button>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
+
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="text-sm text-muted-foreground mr-2">Filtro:</div>
+        <Button variant={filter === "active" ? "default" : "outline"} size="sm" onClick={() => setFilter("active")}>Ativos</Button>
+        <Button variant={filter === "inactive" ? "default" : "outline"} size="sm" onClick={() => setFilter("inactive")}>Inativos</Button>
+        <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>Todos</Button>
+      </div>
+
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <Table>
-          <TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Preço</TableHead><TableHead>Estoque</TableHead>{isAdmin && <TableHead className="w-24">Ações</TableHead>}</TableRow></TableHeader>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nome</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="hidden sm:table-cell">Custo</TableHead>
+              <TableHead className="hidden sm:table-cell">Venda</TableHead>
+              <TableHead className="hidden sm:table-cell">Estoque</TableHead>
+              <TableHead className="w-28">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
           <TableBody>
             {products.map((p) => (
-              <TableRow key={p.id}>
-                <TableCell className="font-medium">{p.name}</TableCell>
-                <TableCell>R$ {p.costPrice.toFixed(2)}</TableCell>
-                <TableCell>{p.stock}</TableCell>
-                {isAdmin && <TableCell><div className="flex gap-1"><Button variant="ghost" size="icon" onClick={() => openEdit(p)}><Pencil className="w-4 h-4" /></Button><Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)} className="text-destructive hover:text-destructive"><Trash2 className="w-4 h-4" /></Button></div></TableCell>}
+              <TableRow key={p.id} className="transition-shadow hover:shadow-sm">
+                <TableCell className="font-medium">
+                  <div className="flex flex-col">
+                    <span className="truncate">{p.name}</span>
+                    <span className="text-xs text-muted-foreground sm:hidden">
+                      Custo: R$ {p.costPrice.toFixed(2)} • Venda: R$ {(p.salePrice ?? 0).toFixed(2)} • Estoque: {p.stock}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <span className={p.active === false ? "text-muted-foreground" : "text-foreground"}>
+                    {p.active === false ? "Inativo" : "Ativo"}
+                  </span>
+                </TableCell>
+                <TableCell className="hidden sm:table-cell">R$ {p.costPrice.toFixed(2)}</TableCell>
+                <TableCell className="hidden sm:table-cell">R$ {(p.salePrice ?? 0).toFixed(2)}</TableCell>
+                <TableCell className="hidden sm:table-cell">{p.stock}</TableCell>
+                <TableCell>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => void handleToggleActive(p)}
+                      title={p.active === false ? "Ativar produto" : "Desativar produto"}
+                    >
+                      {p.active === false ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
-            {products.length === 0 && <TableRow><TableCell colSpan={isAdmin ? 4 : 3} className="text-center text-muted-foreground py-8">Nenhum produto cadastrado</TableCell></TableRow>}
+            {products.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nenhum produto cadastrado</TableCell></TableRow>}
           </TableBody>
         </Table>
       </div>
