@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://aliceglow-backend.onrender.com/$1"
+    }
+  ]
+}
