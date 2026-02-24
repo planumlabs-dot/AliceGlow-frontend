@@ -33,7 +33,6 @@ const Profit = () => {
     const fetchProfit = async () => {
       try {
         const [result, salesResult] = await Promise.all([api.getProfit(), api.getSales()]);
-        console.log("[LUCRO] GET /reports/profit + /sales =>", { result, salesResult });
         setData(result);
         setSales(Array.isArray(salesResult) ? salesResult : []);
       } catch (err: any) {

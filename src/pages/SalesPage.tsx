@@ -156,7 +156,6 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
     setLoading(true);
     try {
       const [s, p] = await Promise.all([api.getSales(), api.getProducts()]);
-      console.log("[VENDA] Dados recebidos do backend (GET /sales):", s);
       setSales(s);
       setProducts(p);
     } catch {
@@ -178,12 +177,10 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
   }, [mode, sales]);
 
   const addItem = () => {
-    console.log("[VENDA] Adicionando novo item de venda");
     setItems([...items, { productId: 0, quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
   };
 
   const removeItem = (index: number) => {
-    console.log(`[VENDA] Removendo item de venda na posição ${index}`);
     setItems(items.filter((_, idx) => idx !== index));
   };
 
@@ -211,7 +208,6 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
       updated[index].unitPriceInput = formatted;
       const parsed = parseFloat(formatted.replace(",", "."));
       updated[index].unitPrice = !isNaN(parsed) ? parsed : undefined;
-      console.log(`[VENDA] unitPriceInput alterado para item ${index}:`, formatted, "->", updated[index].unitPrice);
     } else if (field === "quantityInput") {
       let digits = String(value ?? "").replace(/\D/g, "");
       if (digits.length > 6) digits = digits.slice(0, 6);
@@ -238,7 +234,6 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
           updated[index].quantity = 1;
           updated[index].quantityInput = "1";
         }
-        console.log(`[VENDA] Produto selecionado para item ${index}:`, product);
       }
 
       if (field === "unitPrice") {
@@ -246,12 +241,10 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         }) ?? "";
-        console.log(`[VENDA] unitPrice alterado para item ${index}:`, value);
       }
 
       if (field === "quantity") {
         updated[index].quantityInput = value ? String(value) : "";
-        console.log(`[VENDA] quantity alterado para item ${index}:`, value);
       }
     }
 
@@ -325,7 +318,6 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
       }));
 
       const payload = { client, paymentMethod, status: createStatus, saleItems };
-      console.log("[VENDA] Enviando payload:", payload);
 
       const created = await api.createSale(payload);
 
@@ -345,7 +337,6 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
       setCreateStatus("");
       setItems([{ productId: 0, quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
     } catch (err) {
-      console.error("[VENDA] Erro ao criar venda:", err);
       toast.error(apiErrorMessage(err, "Erro ao criar venda"));
     }
   };

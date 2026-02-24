@@ -35,7 +35,6 @@ const Revenue = () => {
     const fetchRevenue = async () => {
       try {
         const [result, salesResult] = await Promise.all([api.getRevenue(), api.getSales()]);
-        console.log("[FATURAMENTO] GET /reports/invoicing + /sales =>", { result, salesResult });
         setData(result);
         setSales(Array.isArray(salesResult) ? salesResult : []);
       } catch (err: any) {
