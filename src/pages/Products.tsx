@@ -224,19 +224,23 @@ const Products = () => {
         </Dialog>
       </div>
 
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="text-sm text-muted-foreground mr-2">Filtro:</div>
-        <Button variant={filter === "active" ? "default" : "outline"} size="sm" onClick={() => setFilter("active")}>Ativos</Button>
-        <Button variant={filter === "inactive" ? "default" : "outline"} size="sm" onClick={() => setFilter("inactive")}>Inativos</Button>
-        <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>Todos</Button>
-      </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="text-sm text-muted-foreground mr-2">Filtro:</div>
+          <Button variant={filter === "active" ? "default" : "outline"} size="sm" onClick={() => setFilter("active")}>Ativos</Button>
+          <Button variant={filter === "inactive" ? "default" : "outline"} size="sm" onClick={() => setFilter("inactive")}>Inativos</Button>
+          <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>Todos</Button>
+        </div>
 
-      <div className="max-w-sm">
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Pesquisar produto por palavra-chave"
-        />
+        <div className="w-full sm:w-80">
+          <Input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Pesquisar produto por palavra-chave"
+            aria-label="Pesquisar produto"
+          />
+        </div>
       </div>
 
       <div className="bg-card rounded-xl border border-border overflow-hidden">
