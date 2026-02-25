@@ -111,6 +111,13 @@ function shouldShowPay(status: string | undefined) {
   return status === "PENDING";
 }
 
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 export default function SalesPage({ mode }: { mode: SalesPageMode }) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -515,109 +522,118 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
 
                 <div className="space-y-3">
                   <Label>Itens</Label>
-                  {items.map((item, i) => {
-                    const salePrice = item.productId ? getSalePrice(item.productId) : undefined;
-                    const isBelow = typeof salePrice === "number" && typeof item.unitPrice === "number" && item.unitPrice < salePrice;
-                    const stock = item.productId ? getStock(item.productId) : undefined;
-                    const isQtyInvalid = item.productId > 0 && (!!item.quantityInput || typeof item.quantity === "number") && (!item.quantity || item.quantity <= 0);
-                    const isQtyOverStock = typeof stock === "number" && typeof item.quantity === "number" && item.quantity > stock;
-                    const q = (item.productQuery ?? "").trim().toLowerCase();
-                    const filteredProducts = q
-                      ? products.filter((p) => (p.name ?? "").toLowerCase().includes(q))
-                      : products;
+                  <div className="max-h-72 overflow-y-auto pr-1 space-y-3">
+                    {items.map((item, i) => {
+                      const salePrice = item.productId ? getSalePrice(item.productId) : undefined;
+                      const isBelow = typeof salePrice === "number" && typeof item.unitPrice === "number" && item.unitPrice < salePrice;
+                      const stock = item.productId ? getStock(item.productId) : undefined;
+                      const isQtyInvalid = item.productId > 0 && (!!item.quantityInput || typeof item.quantity === "number") && (!item.quantity || item.quantity <= 0);
+                      const isQtyOverStock = typeof stock === "number" && typeof item.quantity === "number" && item.quantity > stock;
 
-                    return (
-                      <div key={i} className="space-y-1">
-                        <Input
-                          value={item.productQuery ?? ""}
-                          onChange={(e) => updateItem(i, "productQuery", e.target.value)}
-                          placeholder="Buscar produto pelo nome"
-                        />
-                        <div className="flex gap-2 items-end">
-                          <div className="flex-1">
-                            <Select
-                              value={item.productId ? String(item.productId) : ""}
-                              onValueChange={(v) => updateItem(i, "productId", parseInt(v, 10))}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Produto" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {filteredProducts.length ? (
-                                  filteredProducts.map((p) => (
-                                    <SelectItem key={p.id} value={String(p.id)}>
-                                      {p.name}
+                      const rawQuery = item.productQuery ?? "";
+                      const normalizedQuery = normalizeText(rawQuery.trim());
+                      const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+
+                      const filteredProducts = queryTokens.length
+                        ? products.filter((p) => {
+                          const name = normalizeText(p.name ?? "");
+                          return queryTokens.every((t) => name.includes(t));
+                        })
+                        : products;
+
+                      return (
+                        <div key={i} className="space-y-1">
+                          <Input
+                            value={rawQuery}
+                            onChange={(e) => updateItem(i, "productQuery", e.target.value)}
+                            placeholder="Buscar produto por palavra-chave"
+                          />
+                          <div className="flex gap-2 items-end">
+                            <div className="flex-1">
+                              <Select
+                                value={item.productId ? String(item.productId) : ""}
+                                onValueChange={(v) => updateItem(i, "productId", parseInt(v, 10))}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Produto" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {filteredProducts.length ? (
+                                    filteredProducts.map((p) => (
+                                      <SelectItem key={p.id} value={String(p.id)}>
+                                        {p.name}
+                                      </SelectItem>
+                                    ))
+                                  ) : (
+                                    <SelectItem value="__no_results__" disabled>
+                                      Nenhum produto encontrado
                                     </SelectItem>
-                                  ))
-                                ) : (
-                                  <SelectItem value="__no_results__" disabled>
-                                    Nenhum produto encontrado
-                                  </SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="w-20">
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                value={item.quantityInput ?? (typeof item.quantity === "number" ? String(item.quantity) : "")}
+                                onChange={(e) => updateItem(i, "quantityInput", e.target.value)}
+                                placeholder="0"
+                                className={cn(
+                                  (isQtyInvalid || isQtyOverStock) && "border-destructive focus-visible:ring-destructive",
                                 )}
-                              </SelectContent>
-                            </Select>
+                              />
+                            </div>
+
+                            <div className="w-32 flex items-center gap-1">
+                              <span className="text-muted-foreground">R$</span>
+                              <Input
+                                type="text"
+                                inputMode="decimal"
+                                value={item.unitPriceInput ?? ""}
+                                onChange={(e) => updateItem(i, "unitPriceInput", e.target.value)}
+                                placeholder="0,00"
+                                className={cn(isBelow && "border-destructive focus-visible:ring-destructive")}
+                              />
+                            </div>
+
+                            {items.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeItem(i)}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            )}
                           </div>
 
-                          <div className="w-20">
-                            <Input
-                              type="text"
-                              inputMode="numeric"
-                              value={item.quantityInput ?? (typeof item.quantity === "number" ? String(item.quantity) : "")}
-                              onChange={(e) => updateItem(i, "quantityInput", e.target.value)}
-                              placeholder="0"
-                              className={cn(
-                                (isQtyInvalid || isQtyOverStock) && "border-destructive focus-visible:ring-destructive",
-                              )}
-                            />
-                          </div>
+                          {typeof salePrice === "number" && (
+                            <div className="text-[11px] text-muted-foreground pl-1">
+                              Preço de venda: {" "}
+                              <span className={cn(isBelow && "text-destructive font-medium")}>
+                                R$ {salePrice.toFixed(2)}
+                              </span>
+                              {isBelow && <span className="ml-2 text-destructive">Abaixo do preço de venda</span>}
+                            </div>
+                          )}
 
-                          <div className="w-32 flex items-center gap-1">
-                            <span className="text-muted-foreground">R$</span>
-                            <Input
-                              type="text"
-                              inputMode="decimal"
-                              value={item.unitPriceInput ?? ""}
-                              onChange={(e) => updateItem(i, "unitPriceInput", e.target.value)}
-                              placeholder="0,00"
-                              className={cn(isBelow && "border-destructive focus-visible:ring-destructive")}
-                            />
-                          </div>
-
-                          {items.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeItem(i)}
-                            >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
+                          {typeof stock === "number" && item.productId > 0 && (
+                            <div className="text-[11px] text-muted-foreground pl-1">
+                              Estoque: {" "}
+                              <span className={cn((isQtyOverStock || isQtyInvalid) && "text-destructive font-medium")}>
+                                {stock}
+                              </span>
+                              {isQtyInvalid && <span className="ml-2 text-destructive">Quantidade não pode ser 0</span>}
+                              {isQtyOverStock && <span className="ml-2 text-destructive">Quantidade acima do estoque</span>}
+                            </div>
                           )}
                         </div>
-
-                        {typeof salePrice === "number" && (
-                          <div className="text-[11px] text-muted-foreground pl-1">
-                            Preço de venda: {" "}
-                            <span className={cn(isBelow && "text-destructive font-medium")}>
-                              R$ {salePrice.toFixed(2)}
-                            </span>
-                            {isBelow && <span className="ml-2 text-destructive">Abaixo do preço de venda</span>}
-                          </div>
-                        )}
-
-                        {typeof stock === "number" && item.productId > 0 && (
-                          <div className="text-[11px] text-muted-foreground pl-1">
-                            Estoque: {" "}
-                            <span className={cn((isQtyOverStock || isQtyInvalid) && "text-destructive font-medium")}>
-                              {stock}
-                            </span>
-                            {isQtyInvalid && <span className="ml-2 text-destructive">Quantidade não pode ser 0</span>}
-                            {isQtyOverStock && <span className="ml-2 text-destructive">Quantidade acima do estoque</span>}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
 
                   <Button type="button" variant="outline" size="sm" onClick={addItem}>
                     <Plus className="w-3 h-3 mr-1" /> Adicionar item

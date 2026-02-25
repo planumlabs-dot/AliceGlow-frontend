@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, Product } from "@/lib/api";
 import { DEMO_MODE, demoProducts } from "@/lib/demo-data";
 import { Button } from "@/components/ui/button";
@@ -15,13 +15,32 @@ import { toast } from "sonner";
 
 type ProductFilter = "active" | "inactive" | "all";
 
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 const Products = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<ProductFilter>("active");
+  const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ name: "", costPrice: "", salePrice: "", stock: "" });
+  const [saving, setSaving] = useState(false);
+
+  const visibleProducts = useMemo(() => {
+    const normalizedQuery = normalizeText(search.trim());
+    const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+    if (!queryTokens.length) return products;
+    return products.filter((p) => {
+      const name = normalizeText(p.name ?? "");
+      return queryTokens.every((t) => name.includes(t));
+    });
+  }, [products, search]);
 
   useEffect(() => {
     const run = async () => {
@@ -50,6 +69,7 @@ const Products = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     const costPrice = parseFloat(form.costPrice);
     const salePrice = parseFloat(form.salePrice);
     const stock = parseInt(form.stock, 10);
@@ -59,6 +79,7 @@ const Products = () => {
     }
     const data = { name: form.name, costPrice, salePrice, stock };
     try {
+      setSaving(true);
       if (DEMO_MODE) {
         if (editing) {
           const idx = products.findIndex((p) => p.id === editing.id);
@@ -81,6 +102,8 @@ const Products = () => {
         return;
       }
       toast.error("Erro ao salvar produto");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -114,7 +137,7 @@ const Products = () => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold text-foreground">Produtos</h1>
-          <p className="text-muted-foreground text-sm mt-1">{products.length} produtos cadastrados</p>
+          <p className="text-muted-foreground text-sm mt-1">{visibleProducts.length} produtos cadastrados</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -129,7 +152,9 @@ const Products = () => {
               <div className="space-y-2"><Label>Preço de Custo</Label><Input type="number" step="0.01" min="0.01" value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} required /></div>
               <div className="space-y-2"><Label>Preço de Venda</Label><Input type="number" step="0.01" min="0.01" value={form.salePrice} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} required /></div>
               <div className="space-y-2"><Label>Estoque</Label><Input type="number" min={0} value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} required /></div>
-              <Button type="submit" className="w-full">{editing ? "Salvar" : "Cadastrar"}</Button>
+              <Button type="submit" className="w-full" disabled={saving}>
+                {saving ? "Aguarde..." : (editing ? "Salvar" : "Cadastrar")}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -140,6 +165,14 @@ const Products = () => {
         <Button variant={filter === "active" ? "default" : "outline"} size="sm" onClick={() => setFilter("active")}>Ativos</Button>
         <Button variant={filter === "inactive" ? "default" : "outline"} size="sm" onClick={() => setFilter("inactive")}>Inativos</Button>
         <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>Todos</Button>
+      </div>
+
+      <div className="max-w-sm">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Pesquisar produto por palavra-chave"
+        />
       </div>
 
       <div className="bg-card rounded-xl border border-border overflow-hidden">
@@ -155,7 +188,7 @@ const Products = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {products.map((p) => (
+            {visibleProducts.map((p) => (
               <TableRow key={p.id} className="transition-shadow hover:shadow-sm">
                 <TableCell className="font-medium">
                   <div className="flex flex-col">
@@ -190,7 +223,7 @@ const Products = () => {
                 </TableCell>
               </TableRow>
             ))}
-            {products.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nenhum produto cadastrado</TableCell></TableRow>}
+            {visibleProducts.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nenhum produto encontrado</TableCell></TableRow>}
           </TableBody>
         </Table>
       </div>
