@@ -99,6 +99,30 @@ export const api = {
     const query = queryParts.length ? `?${queryParts.join("&")}` : "";
     return request<Product[]>(`/products${query}`);
   },
+  getProductsPage: (params?: {
+    page?: number;
+    size?: number;
+    sort?: string;
+    active?: boolean;
+    includeInactive?: boolean;
+    q?: string;
+  }) => {
+    const page = params?.page ?? 0;
+    const size = params?.size ?? 20;
+    const sort = params?.sort ?? "name,asc";
+
+    const queryParts: string[] = [
+      `page=${encodeURIComponent(String(page))}`,
+      `size=${encodeURIComponent(String(size))}`,
+      `sort=${encodeURIComponent(sort)}`,
+    ];
+
+    if (typeof params?.active === "boolean") queryParts.push(`active=${encodeURIComponent(String(params.active))}`);
+    if (typeof params?.includeInactive === "boolean") queryParts.push(`includeInactive=${encodeURIComponent(String(params.includeInactive))}`);
+    if (params?.q?.trim()) queryParts.push(`q=${encodeURIComponent(params.q.trim())}`);
+
+    return request<Page<Product>>(`/products/page?${queryParts.join("&")}`);
+  },
   createProduct: (data: { name: string; costPrice: number; salePrice: number; stock: number }) =>
     request<Product>("/products", { method: "POST", body: JSON.stringify(data) }),
   updateProduct: (id: number, data: { name?: string; costPrice?: number; salePrice?: number; stock?: number }) =>
@@ -112,6 +136,20 @@ export const api = {
 
   // Sales
   getSales: () => request<Sale[]>("/sales"),
+  getSalesPage: (params?: { page?: number; size?: number; sort?: string }) => {
+    const page = params?.page ?? 0;
+    const size = params?.size ?? 20;
+    const sort = params?.sort ?? "createdAt,desc";
+    return request<Page<Sale>>(`/sales/page?page=${encodeURIComponent(String(page))}&size=${encodeURIComponent(String(size))}&sort=${encodeURIComponent(sort)}`);
+  },
+  getSalesByPeriodPage: (start: string, end: string, params?: { page?: number; size?: number; sort?: string }) => {
+    const page = params?.page ?? 0;
+    const size = params?.size ?? 20;
+    const sort = params?.sort ?? "createdAt,desc";
+    return request<Page<Sale>>(
+      `/sales/page?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&page=${encodeURIComponent(String(page))}&size=${encodeURIComponent(String(size))}&sort=${encodeURIComponent(sort)}`,
+    );
+  },
   getSalesByPeriod: (start: string, end: string) =>
     request<Sale[]>(`/sales?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   getSale: (id: number) => request<SaleDetail>(`/sales/${id}`),
@@ -153,12 +191,12 @@ export const api = {
   getProfit: async (): Promise<ProfitData> => {
     const total = await request<number>("/reports/profit");
     const revenue = await request<number>("/reports/invoicing");
-    // Calcula lucro de hoje via /sales (não existe endpoint por período documentado)
-    const sales = await request<Sale[]>("/sales");
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const today = sales
-      .filter((s) => ((s.createdAt ?? s.date ?? "").slice(0, 10) === todayStr) && s.status !== "CANCELED")
-      .reduce((sum, s) => sum + (s.profit ?? 0), 0);
+
+    const startOfDay = new Date().toISOString().split("T")[0] + "T00:00:00";
+    const endNow = new Date().toISOString();
+    const today = await request<number>(
+      `/reports/profit/period?start=${encodeURIComponent(startOfDay)}&end=${encodeURIComponent(endNow)}`,
+    );
 
     const margin = revenue > 0 ? total / revenue : 0;
     return { total, today, thisMonth: 0, thisYear: 0, margin };

@@ -25,43 +25,107 @@ function normalizeText(value: string) {
 const Products = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [filter, setFilter] = useState<ProductFilter>("active");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalElements, setTotalElements] = useState<number | null>(null);
+  const [refreshSeq, setRefreshSeq] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ name: "", costPrice: "", salePrice: "", stock: "" });
   const [saving, setSaving] = useState(false);
 
-  const visibleProducts = useMemo(() => {
-    const normalizedQuery = normalizeText(search.trim());
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const demoVisibleProducts = useMemo(() => {
+    if (!DEMO_MODE) return [] as Product[];
+
+    const base = (demoProducts as unknown as Product[]).filter((p) => {
+      if (filter === "active") return p.active !== false;
+      if (filter === "inactive") return p.active === false;
+      return true;
+    });
+
+    const normalizedQuery = normalizeText(debouncedSearch.trim());
     const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
-    if (!queryTokens.length) return products;
-    return products.filter((p) => {
+    if (!queryTokens.length) return base;
+    return base.filter((p) => {
       const name = normalizeText(p.name ?? "");
       return queryTokens.every((t) => name.includes(t));
     });
-  }, [products, search]);
+  }, [debouncedSearch, filter]);
 
   useEffect(() => {
     const run = async () => {
       setLoading(true);
       try {
+        if (DEMO_MODE) {
+          setProducts(demoVisibleProducts);
+          setPage(0);
+          setTotalPages(1);
+          setTotalElements(demoVisibleProducts.length);
+          return;
+        }
+
         const params = nextFilterToApiParams(filter);
-        const result = await api.getProducts(params);
-        setProducts(result);
+        const result = await api.getProductsPage({
+          page: 0,
+          size: 20,
+          sort: "name,asc",
+          ...params,
+          q: debouncedSearch,
+        });
+        setProducts(result.content ?? []);
+        setPage(result.number ?? 0);
+        setTotalPages(result.totalPages ?? 0);
+        setTotalElements(typeof result.totalElements === "number" ? result.totalElements : null);
       } catch {
         toast.error("Erro ao carregar produtos");
       } finally {
         setLoading(false);
       }
     };
+
     void run();
-  }, [filter]);
+  }, [debouncedSearch, demoVisibleProducts, filter, refreshSeq]);
 
   const nextFilterToApiParams = (f: ProductFilter) => {
     if (f === "active") return undefined;
     if (f === "inactive") return { active: false } as const;
     return { includeInactive: true } as const;
+  };
+
+  const canLoadMore = !DEMO_MODE && page + 1 < totalPages;
+
+  const handleLoadMore = async () => {
+    if (!canLoadMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const params = nextFilterToApiParams(filter);
+      const nextPage = page + 1;
+      const result = await api.getProductsPage({
+        page: nextPage,
+        size: 20,
+        sort: "name,asc",
+        ...params,
+        q: debouncedSearch,
+      });
+
+      setProducts((prev) => [...prev, ...(result.content ?? [])]);
+      setPage(result.number ?? nextPage);
+      setTotalPages(result.totalPages ?? totalPages);
+      setTotalElements(typeof result.totalElements === "number" ? result.totalElements : totalElements);
+    } catch {
+      toast.error("Erro ao carregar mais produtos");
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   const openCreate = () => { setEditing(null); setForm({ name: "", costPrice: "", salePrice: "", stock: "" }); setDialogOpen(true); };
@@ -95,7 +159,7 @@ const Products = () => {
       else { await api.createProduct(data); toast.success("Produto criado"); }
       setDialogOpen(false);
       // refetch mantém filtro atual
-      setFilter((v) => v);
+      setRefreshSeq((x) => x + 1);
     } catch (err) {
       if ((err as any)?.status === 403) {
         toast.error("Sem permissão para cadastrar/editar produto");
@@ -123,7 +187,7 @@ const Products = () => {
         toast.success("Produto ativado");
       }
       // refetch respeitando filtro (se desativar em 'ativos', pode sumir da lista)
-      setFilter((v) => v);
+      setRefreshSeq((x) => x + 1);
     } catch (err: any) {
       if (err?.status === 403) toast.error("Sem permissão para ativar/desativar produto");
       else toast.error(err?.message || "Erro ao alterar status do produto");
@@ -137,7 +201,7 @@ const Products = () => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold text-foreground">Produtos</h1>
-          <p className="text-muted-foreground text-sm mt-1">{visibleProducts.length} produtos cadastrados</p>
+          <p className="text-muted-foreground text-sm mt-1">{(totalElements ?? products.length)} produtos cadastrados</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -188,7 +252,7 @@ const Products = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {visibleProducts.map((p) => (
+            {products.map((p) => (
               <TableRow key={p.id} className="transition-shadow hover:shadow-sm">
                 <TableCell className="font-medium">
                   <div className="flex flex-col">
@@ -223,10 +287,18 @@ const Products = () => {
                 </TableCell>
               </TableRow>
             ))}
-            {visibleProducts.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nenhum produto encontrado</TableCell></TableRow>}
+            {products.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nenhum produto encontrado</TableCell></TableRow>}
           </TableBody>
         </Table>
       </div>
+
+      {!loading && canLoadMore && (
+        <div className="flex justify-center">
+          <Button variant="outline" onClick={() => void handleLoadMore()} disabled={loadingMore}>
+            {loadingMore ? "Carregando..." : "Carregar mais"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
