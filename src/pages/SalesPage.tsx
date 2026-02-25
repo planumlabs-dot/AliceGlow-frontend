@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 
 interface SaleItem {
   productId: number;
+  productQuery?: string;
   quantity?: number;
   quantityInput?: string;
   unitPrice?: number;
@@ -128,7 +129,7 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
 
   const [client, setClient] = useState("");
   const [items, setItems] = useState<SaleItem[]>([
-    { productId: 0, quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" },
+    { productId: 0, productQuery: "", quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" },
   ]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [createStatus, setCreateStatus] = useState<CreateSaleStatus | "">("");
@@ -177,7 +178,7 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
   }, [mode, sales]);
 
   const addItem = () => {
-    setItems([...items, { productId: 0, quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
+    setItems([...items, { productId: 0, productQuery: "", quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
   };
 
   const removeItem = (index: number) => {
@@ -224,6 +225,7 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
 
       if (field === "productId") {
         const product = products.find((p) => p.id === value);
+        updated[index].productQuery = "";
         // Ao selecionar produto, sugere o preço de VENDA (não custo/estoque)
         updated[index].unitPrice = product?.salePrice ?? 0;
         updated[index].unitPriceInput = product?.salePrice?.toLocaleString("pt-BR", {
@@ -306,7 +308,7 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
       setDialogOpen(false);
       setClient("");
       setCreateStatus("");
-      setItems([{ productId: 0, quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
+      setItems([{ productId: 0, productQuery: "", quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
       return;
     }
 
@@ -335,7 +337,7 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
       setDialogOpen(false);
       setClient("");
       setCreateStatus("");
-      setItems([{ productId: 0, quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
+      setItems([{ productId: 0, productQuery: "", quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
     } catch (err) {
       toast.error(apiErrorMessage(err, "Erro ao criar venda"));
     }
@@ -446,7 +448,7 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
                 setClient("");
                 setPaymentMethod("CASH");
                 setCreateStatus("");
-                setItems([{ productId: 0, quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
+                setItems([{ productId: 0, productQuery: "", quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
               }
             }}
           >
@@ -519,9 +521,18 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
                     const stock = item.productId ? getStock(item.productId) : undefined;
                     const isQtyInvalid = item.productId > 0 && (!!item.quantityInput || typeof item.quantity === "number") && (!item.quantity || item.quantity <= 0);
                     const isQtyOverStock = typeof stock === "number" && typeof item.quantity === "number" && item.quantity > stock;
+                    const q = (item.productQuery ?? "").trim().toLowerCase();
+                    const filteredProducts = q
+                      ? products.filter((p) => (p.name ?? "").toLowerCase().includes(q))
+                      : products;
 
                     return (
                       <div key={i} className="space-y-1">
+                        <Input
+                          value={item.productQuery ?? ""}
+                          onChange={(e) => updateItem(i, "productQuery", e.target.value)}
+                          placeholder="Buscar produto pelo nome"
+                        />
                         <div className="flex gap-2 items-end">
                           <div className="flex-1">
                             <Select
@@ -532,11 +543,17 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
                                 <SelectValue placeholder="Produto" />
                               </SelectTrigger>
                               <SelectContent>
-                                {products.map((p) => (
-                                  <SelectItem key={p.id} value={String(p.id)}>
-                                    {p.name}
+                                {filteredProducts.length ? (
+                                  filteredProducts.map((p) => (
+                                    <SelectItem key={p.id} value={String(p.id)}>
+                                      {p.name}
+                                    </SelectItem>
+                                  ))
+                                ) : (
+                                  <SelectItem value="__no_results__" disabled>
+                                    Nenhum produto encontrado
                                   </SelectItem>
-                                ))}
+                                )}
                               </SelectContent>
                             </Select>
                           </div>
