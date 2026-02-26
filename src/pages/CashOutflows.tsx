@@ -20,6 +20,7 @@ export default function CashOutflows() {
   const [end, setEnd] = useState(new Date().toISOString().slice(0, 19));
   const [data, setData] = useState<CashOutflowsReport | null>(null);
   const [loading, setLoading] = useState(false);
+  const [filterLockedUntil, setFilterLockedUntil] = useState(0);
 
   const fetchData = async () => {
     setLoading(true);
@@ -56,7 +57,15 @@ export default function CashOutflows() {
             <Label>Fim (ISO datetime)</Label>
             <Input value={end} onChange={(e) => setEnd(e.target.value)} placeholder="2026-02-23T23:59:59" />
           </div>
-          <Button disabled={loading} onClick={() => void fetchData()}>
+          <Button
+            disabled={loading || Date.now() < filterLockedUntil}
+            onClick={() => {
+              const now = Date.now();
+              if (now < filterLockedUntil) return;
+              setFilterLockedUntil(now + 4000);
+              void fetchData();
+            }}
+          >
             Filtrar
           </Button>
         </div>

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -27,10 +27,38 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   cancelLabel = "Cancelar",
   onConfirm,
 }) => {
+  const [confirming, setConfirming] = useState(false);
+  const [lockedUntil, setLockedUntil] = useState(0);
+  const unlockTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (unlockTimerRef.current) {
+        window.clearTimeout(unlockTimerRef.current);
+        unlockTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const handleConfirm = async () => {
+    const now = Date.now();
+    if (confirming || now < lockedUntil) return;
+
+    const nextLockedUntil = now + 4000;
+    setLockedUntil(nextLockedUntil);
+    setConfirming(true);
+
     try {
       await onConfirm();
     } finally {
+      const remaining = nextLockedUntil - Date.now();
+      if (remaining > 0) {
+        unlockTimerRef.current = window.setTimeout(() => {
+          setConfirming(false);
+        }, remaining);
+      } else {
+        setConfirming(false);
+      }
       onOpenChange(false);
     }
   };
@@ -44,8 +72,12 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         <div className="py-2 text-sm text-muted-foreground">{description}</div>
         <DialogFooter>
           <div className="flex gap-2 w-full justify-end">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>{cancelLabel}</Button>
-            <Button onClick={handleConfirm}>{confirmLabel}</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={confirming}>
+              {cancelLabel}
+            </Button>
+            <Button onClick={handleConfirm} disabled={confirming || Date.now() < lockedUntil}>
+              {confirming ? "Aguarde..." : confirmLabel}
+            </Button>
           </div>
         </DialogFooter>
       </DialogContent>

@@ -26,6 +26,8 @@ const UsersPage = () => {
   const [form, setForm] = useState({ name: "", email: "", password: "", isAdmin: false });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveLockedUntil, setSaveLockedUntil] = useState(0);
 
   const fetchUsers = async () => {
     if (DEMO_MODE) { setUsers(demoUsers); setLoading(false); return; }
@@ -43,6 +45,10 @@ const UsersPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const now = Date.now();
+    if (saving || now < saveLockedUntil) return;
+    setSaveLockedUntil(now + 4000);
+
     const data = { name: form.name, email: form.email, password: form.password, perfils: form.isAdmin ? ["ADMIN"] : [] };
     if (DEMO_MODE) {
       if (editing) {
@@ -56,6 +62,7 @@ const UsersPage = () => {
       return;
     }
     try {
+      setSaving(true);
       if (editing) {
         await api.updateUser(editing.id, data);
         toast.success("Usuário atualizado");
@@ -67,6 +74,7 @@ const UsersPage = () => {
       setForm({ name: "", email: "", password: "", isAdmin: false });
       fetchUsers();
     } catch { toast.error("Erro ao salvar usuário"); }
+    finally { setSaving(false); }
   };
 
   const handleDelete = async (id?: number) => {
@@ -99,7 +107,9 @@ const UsersPage = () => {
                 <input type="checkbox" id="isAdmin" checked={form.isAdmin} onChange={(e) => setForm({ ...form, isAdmin: e.target.checked })} className="rounded border-border" />
                 <Label htmlFor="isAdmin">Administrador</Label>
               </div>
-              <Button type="submit" className="w-full">{editing ? "Salvar" : "Criar"} Usuário</Button>
+              <Button type="submit" className="w-full" disabled={saving || Date.now() < saveLockedUntil}>
+                {saving ? "Aguarde..." : `${editing ? "Salvar" : "Criar"} Usuário`}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>

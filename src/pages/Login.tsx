@@ -12,6 +12,7 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [submitLockedUntil, setSubmitLockedUntil] = useState(0);
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
@@ -24,6 +25,10 @@ const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const now = Date.now();
+    if (loading || now < submitLockedUntil) return;
+    setSubmitLockedUntil(now + 4000);
+
     setError("");
     setLoading(true);
     try {
@@ -85,7 +90,7 @@ const Login = () => {
               </p>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading || Date.now() < submitLockedUntil}>
               {loading ? "Entrando..." : "Entrar"}
             </Button>
           </form>

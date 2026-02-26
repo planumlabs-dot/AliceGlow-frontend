@@ -20,6 +20,8 @@ export default function StockPurchases() {
   const [end, setEnd] = useState(today);
   const [rows, setRows] = useState<StockPurchase[]>([]);
   const [loading, setLoading] = useState(false);
+  const [createLockedUntil, setCreateLockedUntil] = useState(0);
+  const [filterLockedUntil, setFilterLockedUntil] = useState(0);
 
   const [purchaseDate, setPurchaseDate] = useState(today);
   const [description, setDescription] = useState("");
@@ -43,10 +45,15 @@ export default function StockPurchases() {
   }, []);
 
   const handleCreate = async () => {
+    const now = Date.now();
+    if (loading || now < createLockedUntil) return;
+
     if (!purchaseDate || !description.trim()) {
       toast.error("Preencha data e descrição");
       return;
     }
+
+    setCreateLockedUntil(now + 4000);
 
     setLoading(true);
     try {
@@ -79,7 +86,7 @@ export default function StockPurchases() {
             <Label>Descrição</Label>
             <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Compra semanal" />
           </div>
-          <Button disabled={loading} onClick={() => void handleCreate()}>
+          <Button disabled={loading || Date.now() < createLockedUntil} onClick={() => void handleCreate()}>
             Registrar
           </Button>
         </div>
@@ -95,7 +102,16 @@ export default function StockPurchases() {
             <Label>Fim</Label>
             <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
           </div>
-          <Button disabled={loading} variant="outline" onClick={() => void fetchRows()}>
+          <Button
+            disabled={loading || Date.now() < filterLockedUntil}
+            variant="outline"
+            onClick={() => {
+              const now = Date.now();
+              if (now < filterLockedUntil) return;
+              setFilterLockedUntil(now + 4000);
+              void fetchRows();
+            }}
+          >
             Filtrar
           </Button>
         </div>

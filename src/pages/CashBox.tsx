@@ -34,6 +34,12 @@ export default function CashBox() {
   const [cashBoxesPage, setCashBoxesPage] = useState(0);
   const [cashBoxesTotalPages, setCashBoxesTotalPages] = useState<number | null>(null);
 
+  const [listLockedUntil, setListLockedUntil] = useState(0);
+  const [fetchLockedUntil, setFetchLockedUntil] = useState(0);
+  const [createLockedUntil, setCreateLockedUntil] = useState(0);
+  const [updateLockedUntil, setUpdateLockedUntil] = useState(0);
+  const [outflowLockedUntil, setOutflowLockedUntil] = useState(0);
+
   const cashBoxesAvailableSorted = useMemo(() => {
     return [...cashBoxesAvailable].sort((a, b) => Number(a.id) - Number(b.id));
   }, [cashBoxesAvailable]);
@@ -164,11 +170,16 @@ export default function CashBox() {
   }, []);
 
   const handleCreate = async () => {
+    const now = Date.now();
+    if (loading || now < createLockedUntil) return;
+
     const bal = parseFloat(createBalance);
     if (isNaN(bal)) {
       toast.error("Saldo inválido");
       return;
     }
+
+    setCreateLockedUntil(now + 4000);
 
     setLoading(true);
     try {
@@ -189,12 +200,17 @@ export default function CashBox() {
   };
 
   const handleUpdateBalance = async () => {
+    const now = Date.now();
+    if (loading || now < updateLockedUntil) return;
+
     if (!cashBox) return;
     const bal = parseFloat(editBalance);
     if (isNaN(bal)) {
       toast.error("Saldo inválido");
       return;
     }
+
+    setUpdateLockedUntil(now + 4000);
 
     setLoading(true);
     try {
@@ -211,6 +227,9 @@ export default function CashBox() {
   };
 
   const handleAddOutflow = async () => {
+    const now = Date.now();
+    if (loading || now < outflowLockedUntil) return;
+
     if (!cashBox) return;
     const amount = parseFloat(outflowAmount.replace(",", "."));
 
@@ -226,6 +245,8 @@ export default function CashBox() {
       toast.error("Valor inválido");
       return;
     }
+
+    setOutflowLockedUntil(now + 4000);
 
     setLoading(true);
     try {
@@ -270,8 +291,11 @@ export default function CashBox() {
               size="icon"
               className="h-8 w-8"
               title="Atualizar lista"
-              disabled={loadingCashBoxesList || loading}
+              disabled={loadingCashBoxesList || loading || Date.now() < listLockedUntil}
               onClick={() => {
+                const now = Date.now();
+                if (now < listLockedUntil) return;
+                setListLockedUntil(now + 4000);
                 setCashBoxesPage(0);
                 void loadCashBoxesList({ reset: true });
               }}
@@ -309,8 +333,13 @@ export default function CashBox() {
               variant="outline"
               size="sm"
               className="w-full"
-              disabled={loadingCashBoxesList || loading || (cashBoxesTotalPages !== null && cashBoxesPage >= cashBoxesTotalPages)}
-              onClick={() => void loadCashBoxesList({ reset: false })}
+              disabled={loadingCashBoxesList || loading || Date.now() < listLockedUntil || (cashBoxesTotalPages !== null && cashBoxesPage >= cashBoxesTotalPages)}
+              onClick={() => {
+                const now = Date.now();
+                if (now < listLockedUntil) return;
+                setListLockedUntil(now + 4000);
+                void loadCashBoxesList({ reset: false });
+              }}
             >
               Carregar mais
             </Button>
@@ -325,7 +354,16 @@ export default function CashBox() {
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
 
-          <Button disabled={loading} variant="outline" onClick={() => void fetchByDate(date)}>
+          <Button
+            disabled={loading || Date.now() < fetchLockedUntil}
+            variant="outline"
+            onClick={() => {
+              const now = Date.now();
+              if (now < fetchLockedUntil) return;
+              setFetchLockedUntil(now + 4000);
+              void fetchByDate(date);
+            }}
+          >
             Buscar
           </Button>
 
@@ -334,7 +372,7 @@ export default function CashBox() {
               <Label>Saldo inicial</Label>
               <Input value={createBalance} onChange={(e) => setCreateBalance(e.target.value)} inputMode="decimal" />
             </div>
-            <Button disabled={loading} onClick={() => void handleCreate()}>
+            <Button disabled={loading || Date.now() < createLockedUntil} onClick={() => void handleCreate()}>
               Criar
             </Button>
           </div>
@@ -360,7 +398,7 @@ export default function CashBox() {
             <Label>Editar saldo</Label>
             <Input value={editBalance} onChange={(e) => setEditBalance(e.target.value)} inputMode="decimal" disabled={!cashBox} />
           </div>
-          <Button disabled={loading || !cashBox} onClick={() => void handleUpdateBalance()}>
+          <Button disabled={loading || !cashBox || Date.now() < updateLockedUntil} onClick={() => void handleUpdateBalance()}>
             Salvar saldo
           </Button>
         </div>
@@ -403,7 +441,7 @@ export default function CashBox() {
               />
             </div>
             <div className="md:col-span-4">
-              <Button disabled={loading || !cashBox} onClick={() => void handleAddOutflow()}>
+              <Button disabled={loading || !cashBox || Date.now() < outflowLockedUntil} onClick={() => void handleAddOutflow()}>
                 Registrar saída
               </Button>
             </div>

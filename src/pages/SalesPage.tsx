@@ -123,6 +123,9 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const sortProductsByName = (list: Product[]) =>
+    [...list].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "pt-BR", { sensitivity: "base" }));
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleDetail | null>(null);
@@ -141,6 +144,12 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [createStatus, setCreateStatus] = useState<CreateSaleStatus | "">("");
 
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [createLockedUntil, setCreateLockedUntil] = useState(0);
+  const [payingById, setPayingById] = useState<Record<number, boolean>>({});
+  const [payLockedUntilById, setPayLockedUntilById] = useState<Record<number, number>>({});
+  const [detailLockedUntilById, setDetailLockedUntilById] = useState<Record<number, number>>({});
+
   const getSalePrice = (productId: number) => {
     const p = products.find((x) => x.id === productId);
     return typeof p?.salePrice === "number" ? p.salePrice : undefined;
@@ -156,7 +165,7 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
   const fetchAll = async () => {
     if (DEMO_MODE) {
       setSales(demoSales as unknown as Sale[]);
-      setProducts(demoProducts as unknown as Product[]);
+      setProducts(sortProductsByName(demoProducts as unknown as Product[]));
       setLoading(false);
       return;
     }
@@ -165,7 +174,7 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
     try {
       const [s, p] = await Promise.all([api.getSales(), api.getProducts()]);
       setSales(s);
-      setProducts(p);
+      setProducts(sortProductsByName(p));
     } catch {
       toast.error("Erro ao carregar vendas");
     } finally {
@@ -298,6 +307,11 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
       toast.warning(`Atenção: existe item com preço abaixo do preço de venda (R$ ${(belowSalePrice.salePrice as number).toFixed(2)}).`);
     }
 
+    const now = Date.now();
+    if (createSubmitting || now < createLockedUntil) return;
+    setCreateLockedUntil(now + 4000);
+    setCreateSubmitting(true);
+
     if (DEMO_MODE) {
       const total = validItems.reduce((sum, item) => sum + ((item.unitPrice || 0) * item.quantity), 0);
       setSales([
@@ -316,6 +330,7 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
       setClient("");
       setCreateStatus("");
       setItems([{ productId: 0, productQuery: "", quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
+      setCreateSubmitting(false);
       return;
     }
 
@@ -347,10 +362,16 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
       setItems([{ productId: 0, productQuery: "", quantity: 1, quantityInput: "1", unitPrice: undefined, unitPriceInput: "" }]);
     } catch (err) {
       toast.error(apiErrorMessage(err, "Erro ao criar venda"));
+    } finally {
+      setCreateSubmitting(false);
     }
   };
 
   const openSaleDetail = async (id: number) => {
+    const now = Date.now();
+    if (detailLoading || now < (detailLockedUntilById[id] ?? 0)) return;
+    setDetailLockedUntilById((prev) => ({ ...prev, [id]: now + 4000 }));
+
     setDetailLoading(true);
     setSelectedSale(null);
 
@@ -411,11 +432,17 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
   };
 
   const handlePay = async (id: number) => {
+    const now = Date.now();
+    if (payingById[id] || now < (payLockedUntilById[id] ?? 0)) return;
+    setPayLockedUntilById((prev) => ({ ...prev, [id]: now + 4000 }));
+    setPayingById((prev) => ({ ...prev, [id]: true }));
+
     if (DEMO_MODE) {
       setSales(sales.map((s) => (s.id === id ? ({ ...s, status: "PAID" } as Sale) : s)));
       setPaidSaleId(id);
       setPaidAlertOpen(true);
       toast.success("Venda marcada como paga");
+      setPayingById((prev) => ({ ...prev, [id]: false }));
       return;
     }
 
@@ -427,6 +454,8 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
       toast.success("Venda marcada como paga");
     } catch (err) {
       toast.error(apiErrorMessage(err, "Erro ao marcar venda como paga"));
+    } finally {
+      setPayingById((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -640,8 +669,8 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
                   </Button>
                 </div>
 
-                <Button type="submit" className="w-full">
-                  Criar Venda
+                <Button type="submit" className="w-full" disabled={createSubmitting || Date.now() < createLockedUntil}>
+                  {createSubmitting ? "Aguarde..." : "Criar Venda"}
                 </Button>
               </form>
             </DialogContent>
@@ -693,6 +722,7 @@ export default function SalesPage({ mode }: { mode: SalesPageMode }) {
                           size="sm"
                           className="h-8 px-2 sm:px-3"
                           title="Marcar como paga"
+                          disabled={!!payingById[s.id] || Date.now() < (payLockedUntilById[s.id] ?? 0)}
                           onClick={(e) => {
                             e.stopPropagation();
                             void handlePay(s.id);

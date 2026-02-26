@@ -29,6 +29,7 @@ const Dashboard = () => {
   const [endDate, setEndDate] = useState(today);
 
   const [loadingPeriod, setLoadingPeriod] = useState(false);
+  const [periodLockedUntil, setPeriodLockedUntil] = useState(0);
   const [periodRevenue, setPeriodRevenue] = useState<number | null>(null);
   const [periodProfit, setPeriodProfit] = useState<number | null>(null);
   const [periodSalesCount, setPeriodSalesCount] = useState<number | null>(null);
@@ -206,13 +207,24 @@ const Dashboard = () => {
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </div>
           <div className="md:col-span-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-            <Button disabled={loadingPeriod} onClick={() => void applyPeriod()}>
+            <Button
+              disabled={loadingPeriod || Date.now() < periodLockedUntil}
+              onClick={() => {
+                const now = Date.now();
+                if (now < periodLockedUntil) return;
+                setPeriodLockedUntil(now + 4000);
+                void applyPeriod();
+              }}
+            >
               {loadingPeriod ? "Carregando..." : "Aplicar filtro"}
             </Button>
             <Button
-              disabled={loadingPeriod}
+              disabled={loadingPeriod || Date.now() < periodLockedUntil}
               variant="outline"
               onClick={() => {
+                const now = Date.now();
+                if (now < periodLockedUntil) return;
+                setPeriodLockedUntil(now + 4000);
                 setStartDate(today);
                 setEndDate(today);
                 void applyPeriod(today, today);
@@ -221,9 +233,12 @@ const Dashboard = () => {
               Hoje
             </Button>
             <Button
-              disabled={loadingPeriod || loadingEarliest}
+              disabled={loadingPeriod || loadingEarliest || Date.now() < periodLockedUntil}
               variant="outline"
               onClick={() => void (async () => {
+                const now = Date.now();
+                if (now < periodLockedUntil) return;
+                setPeriodLockedUntil(now + 4000);
                 const earliest = await ensureEarliestDate();
                 if (!earliest) {
                   toast.message("Ainda não há registros para calcular o período geral");
@@ -255,7 +270,15 @@ const Dashboard = () => {
               <div className="text-sm text-muted-foreground">Não foi possível carregar o dashboard.</div>
               <div className="text-sm">{initialError}</div>
               <div className="flex gap-2">
-                <Button onClick={() => void applyPeriod(startDate, endDate)} disabled={loadingPeriod || loadingTotals}>
+                <Button
+                  onClick={() => {
+                    const now = Date.now();
+                    if (now < periodLockedUntil) return;
+                    setPeriodLockedUntil(now + 4000);
+                    void applyPeriod(startDate, endDate);
+                  }}
+                  disabled={loadingPeriod || loadingTotals || Date.now() < periodLockedUntil}
+                >
                   Tentar novamente
                 </Button>
               </div>

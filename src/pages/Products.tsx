@@ -37,6 +37,17 @@ const Products = () => {
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ name: "", costPrice: "", salePrice: "", stock: "" });
   const [saving, setSaving] = useState(false);
+  const [saveLockedUntil, setSaveLockedUntil] = useState(0);
+
+  const [filterLockedUntil, setFilterLockedUntil] = useState(0);
+  const [loadMoreLockedUntil, setLoadMoreLockedUntil] = useState(0);
+  const [toggleLockedUntilById, setToggleLockedUntilById] = useState<Record<number, number>>({});
+  const [togglingById, setTogglingById] = useState<Record<number, boolean>>({});
+
+  const now = Date.now();
+  const hasSearch = !!debouncedSearch.trim();
+  const isFilterLocked = loading || now < filterLockedUntil;
+  const isLoadMoreLocked = loadingMore || now < loadMoreLockedUntil;
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 400);
@@ -74,17 +85,36 @@ const Products = () => {
         }
 
         const params = nextFilterToApiParams(filter);
-        const result = await api.getProductsPage({
-          page: 0,
-          size: 20,
-          sort: "name,asc",
-          ...params,
-          q: debouncedSearch,
-        });
-        setProducts(result.content ?? []);
-        setPage(result.number ?? 0);
-        setTotalPages(result.totalPages ?? 0);
-        setTotalElements(typeof result.totalElements === "number" ? result.totalElements : null);
+        if (hasSearch) {
+          // Fallback de busca no frontend (caso o backend não implemente o parâmetro `q`).
+          const all = await api.getProducts(params as any);
+          const normalizedQuery = normalizeText(debouncedSearch.trim());
+          const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+          const filtered = queryTokens.length
+            ? all.filter((p) => {
+              const name = normalizeText(p.name ?? "");
+              return queryTokens.every((t) => name.includes(t));
+            })
+            : all;
+
+          const sorted = [...filtered].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "pt-BR", { sensitivity: "base" }));
+          setProducts(sorted);
+          setPage(0);
+          setTotalPages(1);
+          setTotalElements(sorted.length);
+        } else {
+          const result = await api.getProductsPage({
+            page: 0,
+            size: 20,
+            sort: "name,asc",
+            ...params,
+            q: debouncedSearch,
+          });
+          setProducts(result.content ?? []);
+          setPage(result.number ?? 0);
+          setTotalPages(result.totalPages ?? 0);
+          setTotalElements(typeof result.totalElements === "number" ? result.totalElements : null);
+        }
       } catch {
         toast.error("Erro ao carregar produtos");
       } finally {
@@ -101,10 +131,12 @@ const Products = () => {
     return { includeInactive: true } as const;
   };
 
-  const canLoadMore = !DEMO_MODE && page + 1 < totalPages;
+  const canLoadMore = !DEMO_MODE && !hasSearch && page + 1 < totalPages;
 
   const handleLoadMore = async () => {
-    if (!canLoadMore || loadingMore) return;
+    const now = Date.now();
+    if (!canLoadMore || loadingMore || now < loadMoreLockedUntil) return;
+    setLoadMoreLockedUntil(now + 4000);
     setLoadingMore(true);
     try {
       const params = nextFilterToApiParams(filter);
@@ -133,7 +165,8 @@ const Products = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (saving) return;
+    const now = Date.now();
+    if (saving || now < saveLockedUntil) return;
     const costPrice = parseFloat(form.costPrice);
     const salePrice = parseFloat(form.salePrice);
     const stock = parseInt(form.stock, 10);
@@ -141,6 +174,8 @@ const Products = () => {
       toast.error("Preencha todos os campos corretamente. Preços devem ser no mínimo 0,01 e estoque não pode ser negativo.");
       return;
     }
+
+    setSaveLockedUntil(now + 4000);
     const data = { name: form.name, costPrice, salePrice, stock };
     try {
       setSaving(true);
@@ -173,9 +208,14 @@ const Products = () => {
 
   const handleToggleActive = async (p: Product) => {
     if (!p?.id) return;
+    const now = Date.now();
+    if (togglingById[p.id] || now < (toggleLockedUntilById[p.id] ?? 0)) return;
+    setToggleLockedUntilById((prev) => ({ ...prev, [p.id]: now + 4000 }));
+    setTogglingById((prev) => ({ ...prev, [p.id]: true }));
     if (DEMO_MODE) {
       setProducts(products.map((x) => (x.id === p.id ? { ...x, active: !(x.active ?? true) } : x)));
       toast.success((p.active ?? true) ? "Produto desativado" : "Produto ativado");
+      setTogglingById((prev) => ({ ...prev, [p.id]: false }));
       return;
     }
     try {
@@ -191,6 +231,8 @@ const Products = () => {
     } catch (err: any) {
       if (err?.status === 403) toast.error("Sem permissão para ativar/desativar produto");
       else toast.error(err?.message || "Erro ao alterar status do produto");
+    } finally {
+      setTogglingById((prev) => ({ ...prev, [p.id]: false }));
     }
   };
 
@@ -216,7 +258,7 @@ const Products = () => {
               <div className="space-y-2"><Label>Preço de Custo</Label><Input type="number" step="0.01" min="0.01" value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} required /></div>
               <div className="space-y-2"><Label>Preço de Venda</Label><Input type="number" step="0.01" min="0.01" value={form.salePrice} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} required /></div>
               <div className="space-y-2"><Label>Estoque</Label><Input type="number" min={0} value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} required /></div>
-              <Button type="submit" className="w-full" disabled={saving}>
+              <Button type="submit" className="w-full" disabled={saving || Date.now() < saveLockedUntil}>
                 {saving ? "Aguarde..." : (editing ? "Salvar" : "Cadastrar")}
               </Button>
             </form>
@@ -227,9 +269,39 @@ const Products = () => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-2 items-center">
           <div className="text-sm text-muted-foreground mr-2">Filtro:</div>
-          <Button variant={filter === "active" ? "default" : "outline"} size="sm" onClick={() => setFilter("active")}>Ativos</Button>
-          <Button variant={filter === "inactive" ? "default" : "outline"} size="sm" onClick={() => setFilter("inactive")}>Inativos</Button>
-          <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>Todos</Button>
+          <Button
+            variant={filter === "active" ? "default" : "outline"}
+            size="sm"
+            disabled={isFilterLocked}
+            onClick={() => {
+              setFilterLockedUntil(Date.now() + 4000);
+              setFilter("active");
+            }}
+          >
+            Ativos
+          </Button>
+          <Button
+            variant={filter === "inactive" ? "default" : "outline"}
+            size="sm"
+            disabled={isFilterLocked}
+            onClick={() => {
+              setFilterLockedUntil(Date.now() + 4000);
+              setFilter("inactive");
+            }}
+          >
+            Inativos
+          </Button>
+          <Button
+            variant={filter === "all" ? "default" : "outline"}
+            size="sm"
+            disabled={isFilterLocked}
+            onClick={() => {
+              setFilterLockedUntil(Date.now() + 4000);
+              setFilter("all");
+            }}
+          >
+            Todos
+          </Button>
         </div>
 
         <div className="w-full sm:w-80">
@@ -281,6 +353,7 @@ const Products = () => {
                       size="icon"
                       onClick={() => void handleToggleActive(p)}
                       title={p.active === false ? "Ativar produto" : "Desativar produto"}
+                      disabled={!!togglingById[p.id] || Date.now() < (toggleLockedUntilById[p.id] ?? 0)}
                     >
                       {p.active === false ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                     </Button>
@@ -298,7 +371,7 @@ const Products = () => {
 
       {!loading && canLoadMore && (
         <div className="flex justify-center">
-          <Button variant="outline" onClick={() => void handleLoadMore()} disabled={loadingMore}>
+          <Button variant="outline" onClick={() => void handleLoadMore()} disabled={isLoadMoreLocked}>
             {loadingMore ? "Carregando..." : "Carregar mais"}
           </Button>
         </div>
